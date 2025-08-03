@@ -12,7 +12,19 @@ from pathlib import Path
 
 # ------------------------------------------------------------
 # region Kotoba-Whisper v2.0 (CTranslate2)
-def fetch_kotoba(dest: Path):
+def fetch_kotoba(dest: Path) -> None:
+    """Kotoba-Whisper v2.0 モデルをダウンロードして保存する。
+
+    Args:
+        dest (Path): モデルを保存するディレクトリのパス。
+
+    Returns:
+        None: 戻り値はありません。
+
+    Raises:
+        huggingface_hub.utils.HFValidationError: ダウンロードに失敗した場合。
+        requests.exceptions.RequestException: ネットワーク障害が発生した場合。
+    """
     from huggingface_hub import snapshot_download
 
     repo_id = "kotoba-tech/kotoba-whisper-v2.0-faster"
@@ -28,7 +40,19 @@ def fetch_kotoba(dest: Path):
 # endregion
 # ------------------------------------------------------------
 # region Silero-VAD v5 (.jit)
-def fetch_silero(dest: Path):
+def fetch_silero(dest: Path) -> None:
+    """Silero-VAD v5 の jit モデルをダウンロードして保存する。
+
+    Args:
+        dest (Path): モデルを保存するディレクトリのパス。
+
+    Returns:
+        None: 戻り値はありません。
+
+    Raises:
+        SystemExit: ``silero_vad.jit`` が見つからない場合。
+        RuntimeError: ``torch.hub.load`` に失敗した場合。
+    """
     import torch
 
     print("▶ Downloading Silero-VAD (jit) …")
@@ -49,7 +73,20 @@ def fetch_silero(dest: Path):
 # endregion
 # ------------------------------------------------------------
 # region メイン処理
-def main():
+def main() -> None:
+    """コマンドライン引数を解析し、必要なモデルをダウンロードする。
+
+    Args:
+        なし
+
+    Returns:
+        None: 戻り値はありません。
+
+    Raises:
+        SystemExit: 引数解析に失敗した場合。
+        huggingface_hub.utils.HFValidationError: ``fetch_kotoba`` でのダウンロードエラー。
+        RuntimeError: ``fetch_silero`` でのダウンロードエラー。
+    """
     parser = argparse.ArgumentParser(
         description="Download Kotoba-Whisper & Silero-VAD models"
     )
