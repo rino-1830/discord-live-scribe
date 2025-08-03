@@ -1,0 +1,10 @@
+--extra-index-url https://download.pytorch.org/whl/cu128
+ctranslate2==15.0.1
+discord.py[voice]==2.5.2
+faster-whisper==1.1.1
+numpy==2.3.2
+python-dotenv==1.1.1
+redis==6.2.0
+silero-vad==5.1.2
+soundfile==0.13.1
+torch==2.7.1+cu128
