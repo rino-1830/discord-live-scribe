@@ -11,25 +11,29 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import os
+from types import ModuleType
 from typing import Any, Dict, Optional
 
 import discord
 import redis.asyncio as redis
 from discord.ext import commands
 from dotenv import load_dotenv
+from redis.exceptions import ConnectionError
 
+sinks_module: ModuleType | None
 try:
-    from discord import sinks
+    sinks_module = importlib.import_module("discord.sinks")
 except Exception:  # pragma: no cover - 環境依存のためテスト除外
-    sinks = None
+    sinks_module = None
 
-
-if sinks is not None:
-    RawDataSink = sinks.RawData
+RawDataSink: type[Any]
+if sinks_module is not None:
+    RawDataSink = sinks_module.RawData  # type: ignore[assignment]
 else:
 
-    class RawDataSink:
+    class _RawDataSink:
         """discord.sinks が利用できない環境向けの簡易 Sink 基底クラス。"""
 
         def __init__(self) -> None:
@@ -42,11 +46,13 @@ else:
 
             return None
 
+    RawDataSink = _RawDataSink
+
 
 class RedisAudioStream:
     """Redis Streams を利用した音声チャンク管理クラス。"""
 
-    def __init__(self, redis_client: redis.Redis, stream_name: str) -> None:
+    def __init__(self, redis_client: redis.Redis[bytes], stream_name: str) -> None:
         """インスタンスを生成する。
 
         Args:
@@ -54,7 +60,7 @@ class RedisAudioStream:
             stream_name: 使用するストリーム名。
         """
 
-        self.redis = redis_client
+        self.redis: redis.Redis[bytes] = redis_client
         self.stream_name = stream_name
 
     async def write(self, user_id: int, pcm: bytes) -> None:
@@ -65,7 +71,10 @@ class RedisAudioStream:
             pcm: 16bit PCM 音声データ。
         """
 
-        fields: Dict[str, Any] = {"user_id": user_id, "pcm": pcm}
+        fields: Dict[str, bytes] = {
+            "user_id": str(user_id).encode(),
+            "pcm": pcm,
+        }
         await self.redis.xadd(self.stream_name, fields)
 
     async def read(self, last_id: str = "0-0") -> tuple[str, Optional[Dict[str, Any]]]:
@@ -187,7 +196,7 @@ class VoiceBot(commands.Bot):
         if not hasattr(voice, "start_recording"):
             raise RuntimeError("この環境の discord.py では録音機能が提供されていません")
         sink = PCMStreamSink(self.audio_stream)
-        voice.start_recording(sink, self._after_recording)
+        voice.start_recording(sink, self._after_recording)  # type: ignore[attr-defined]
 
     async def _after_recording(self, sink: PCMStreamSink) -> None:
         """録音終了時の後処理を行う。
@@ -217,11 +226,11 @@ async def main() -> None:
         raise RuntimeError("DISCORD_BOT_TOKEN が設定されていません")
 
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    redis_client = redis.from_url(redis_url)
+    redis_client: redis.Redis[bytes] = redis.from_url(redis_url, decode_responses=False)
 
     try:
         await redis_client.ping()
-    except redis.exceptions.ConnectionError as exc:
+    except ConnectionError as exc:
         raise RuntimeError(
             "Redis サーバーに接続できません。REDIS_URL とサーバーの起動状態を確認してください。"
         ) from exc
