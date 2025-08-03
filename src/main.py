@@ -19,6 +19,29 @@ import redis.asyncio as redis
 from discord.ext import commands
 from dotenv import load_dotenv
 
+try:
+    from discord import sinks
+except Exception:  # pragma: no cover - 環境依存のためテスト除外
+    sinks = None
+
+
+if sinks is not None:
+    RawDataSink = sinks.RawData
+else:
+
+    class RawDataSink:
+        """discord.sinks が利用できない環境向けの簡易 Sink 基底クラス。"""
+
+        def __init__(self) -> None:
+            """内部状態を初期化する。"""
+
+            self.audio_data = {}
+
+        def cleanup(self) -> None:  # pragma: no cover - 実装はダミー
+            """後処理を行うためのダミーメソッド。"""
+
+            return None
+
 
 class RedisAudioStream:
     """Redis Streams を利用した音声チャンク管理クラス。"""
@@ -66,7 +89,7 @@ class RedisAudioStream:
         return message_id, data
 
 
-class PCMStreamSink(discord.sinks.RawData):
+class PCMStreamSink(RawDataSink):
     """受信音声をリアルタイムで Redis に転送する Sink。"""
 
     def __init__(self, stream: RedisAudioStream) -> None:
@@ -161,6 +184,8 @@ class VoiceBot(commands.Bot):
         """
 
         voice = await channel.connect()
+        if not hasattr(voice, "start_recording"):
+            raise RuntimeError("この環境の discord.py では録音機能が提供されていません")
         sink = PCMStreamSink(self.audio_stream)
         voice.start_recording(sink, self._after_recording)
 
@@ -177,15 +202,29 @@ class VoiceBot(commands.Bot):
 
 
 async def main() -> None:
-    """Discord ボットと STT ワーカーを起動する。"""
+    """Discord ボットと STT ワーカーを起動する。
+
+    `.env` から環境変数を読み込み、Redis への接続確認後にボットと
+    ワーカーを起動する。
+
+    Raises:
+        RuntimeError: ``BOT_TOKEN`` または Redis 接続に問題がある場合。
+    """
 
     load_dotenv()
-    token = os.getenv("BOT_TOKEN")
+    token = os.getenv("DISCORD_BOT_TOKEN")
     if token is None:
-        raise RuntimeError("BOT_TOKEN が設定されていません")
+        raise RuntimeError("DISCORD_BOT_TOKEN が設定されていません")
 
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     redis_client = redis.from_url(redis_url)
+
+    try:
+        await redis_client.ping()
+    except redis.exceptions.ConnectionError as exc:
+        raise RuntimeError(
+            "Redis サーバーに接続できません。REDIS_URL とサーバーの起動状態を確認してください。"
+        ) from exc
 
     audio_stream = RedisAudioStream(redis_client, "audio")
     bot = VoiceBot(audio_stream)
